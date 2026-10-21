@@ -2,26 +2,85 @@
 
 ## Cel
 
-Porównanie klasyfikatora **z warstwami probabilistycznymi** i **bez nich**. Chcemy znaleźć, w jakich warunkach różnice między modelami są **największe**, a w jakich **najmniejsze**.
+Porównanie klasyfikatora **z warstwami probabilistycznymi** i **bez nich** na rzeczywistych danych medycznych z szumem pomiarowym. Chcemy znaleźć, w jakich warunkach różnice między modelami są **największe**, a w jakich **najmniejsze**.
 
 ---
 
-## 1. Dane: Rotated MNIST
+## 1. Dane: PTB-XL (EKG)
 
-- Trening na cyfrach bez rotacji lub z małą rotacją.
-- Test na cyfrach obróconych o coraz większy kąt (np. 0°, 15°, 30°, …, 180°).
+- **Baza:** [PTB-XL na PhysioNet (v1.0.1)](https://physionet.org/content/ptb-xl/1.0.1/)
+- **Kopia danych (Google Drive):** [pobierz](https://drive.google.com/file/d/1svOX5eObCFqY5okBq0o0mX32Rgn6MV9x/view?usp=drive_link)
+- **Publikacja:** Wagner i in., *PTB-XL, a large publicly available electrocardiography dataset*, Scientific Data 2020.
+
+### Gdzie umieścić dane
+
+Pobierz archiwum (z Drive'a albo PhysioNet) i rozpakuj je do katalogu `data/` w głównym folderze repo. Struktura musi wyglądać dokładnie tak:
+
+```
+probabilistic-vs-standard-classifiers/
+├── README.md
+└── data/
+    └── ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1/
+        ├── ptbxl_database.csv
+        ├── scp_statements.csv
+        ├── records100/
+        └── records500/
+```
+
+- Nazwa folderu z danymi musi zostać bez zmian: `ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1`.
+- Pliki `ptbxl_database.csv` i `scp_statements.csv` muszą leżeć bezpośrednio w tym folderze, a nie w dodatkowym podfolderze po rozpakowaniu.
+- Dane zajmują ok. 3,2 GB i **nie są wrzucane do repo** (katalog `data/` jest w `.gitignore`).
+
+Szybkie sprawdzenie (z głównego folderu repo):
+
+```bash
+ls data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1/ptbxl_database.csv
+```
+
+### Co zawiera
+
+- **21 837 zapisów EKG** od 18 885 pacjentów, każdy 10 s, **12 odprowadzeń** (I, II, III, aVR, aVL, aVF, V1–V6).
+- Dwie wersje: 500 Hz (`records500/`) i **100 Hz** (`records100/`). Używamy 100 Hz, więc jeden przykład ma kształt `(1000, 12)`.
+- Format WFDB (biblioteka `wfdb`), metadane w `ptbxl_database.csv`, opis kodów diagnoz w `scp_statements.csv`.
+
+### Etykiety: 5 nadklas diagnostycznych
+
+| Klasa | Znaczenie | Zapisów (wszystkie) | Zapisów z tylko tą klasą |
+|---|---|---|---|
+| **NORM** | prawidłowe EKG | 9 528 | 9 083 |
+| **MI** | zawał mięśnia sercowego | 5 486 | 2 538 |
+| **STTC** | zmiany odcinka ST i załamka T | 5 250 | 2 406 |
+| **CD** | zaburzenia przewodzenia | 4 907 | 1 709 |
+| **HYP** | przerost mięśnia sercowego | 2 655 | 536 |
+
+Zadanie jest z natury wieloetykietowe: 5 158 zapisów ma kilka nadklas naraz, a 407 nie ma żadnej.
+
+> **Propozycja na start:** klasyfikacja jednoetykietowa (softmax, $K = 5$) na 16 272 zapisach, które mają dokładnie jedną nadklasę. Wersja wieloetykietowa jest w propozycjach rozwijania projektu.
+
+### Źródła niepewności zapisane w bazie
+
+| Kolumna | Co oznacza | Zapisów |
+|---|---|---|
+| `scp_codes` | przy każdej diagnozie **pewność 0–100**, wyliczona przez autorów bazy ze sformułowania opisu („możliwy”, „prawdopodobny”…). To nie jest liczba wpisana przez kardiologa. Typowe wartości: 15, 35, 50, 80, 100. Wartość 0 oznacza „brak informacji” | ~7,6 tys. diagnoz (nie zapisów) z pewnością od 1 do 99 |
+| `static_noise`, `burst_noise`, `baseline_drift`, `electrodes_problems` | problemy z jakością sygnału (które odprowadzenia są zaszumione) | 5 021 z co najmniej jednym problemem |
+| `validated_by_human` | `False` oznacza, że opis mógł wygenerować automatycznie aparat EKG i nie potwierdził go lekarz (możliwy szum etykiet) | 5 743 z `False` |
+
+### Podział danych
+
+Kolumna `strat_fold` (1–10) dzieli dane **po pacjentach**: foldy 1–8 to trening, 9 to walidacja, 10 to test. Ten sam pacjent nigdy nie trafia do dwóch części.
 
 ---
 
 ## 2. Modele
 
-> **Uwaga:** poniższy dobór warstw to **propozycja na start**. Może się zmienić w trakcie eksperymentów albo po podmianie zbioru danych.
+> **Uwaga:** poniższy dobór warstw to **propozycja na start**. Może się zmienić w trakcie eksperymentów.
 
 | | Model A: deterministyczny | Model B: probabilistyczny |
 |---|---|---|
-| Warstwy | `Dense` / `Conv2D` | `tfp.layers.DenseFlipout` / `tfp.layers.Convolution2DFlipout` |
+| Warstwy | `Conv1D` / `Dense` | `tfp.layers.Convolution1DFlipout` / `tfp.layers.DenseFlipout` |
+| Wejście | `(1000, 12)` | `(1000, 12)` |
 | Wyjście | softmax | rozkład predykcyjny uśredniony z T próbek (np. T = 50) |
-| Architektura | taka sama w obu modelach (ta sama liczba warstw i neuronów) | |
+| Architektura | taka sama w obu modelach (ta sama liczba warstw i filtrów) | |
 
 **Uwaga techniczna:** TensorFlow Probability współpracuje z **tf-keras** (Keras 2), a nie z Keras 3. Trzeba zainstalować `tf-keras` i używać `import tf_keras as keras`.
 
@@ -31,19 +90,20 @@ Porównanie klasyfikatora **z warstwami probabilistycznymi** i **bez nich**. Chc
 
 Każdą kombinację powtarzamy kilka razy z różnymi seedami.
 
-1. **Rozmiar zbioru treningowego**, np. 500 / 1 000 / 5 000 / 10 000 / 60 000 przykładów.
-2. **Poziom zaszumienia**
+1. **Rozmiar zbioru treningowego**, np. 500 / 1 000 / 2 000 / 5 000 / pełny (foldy 1–8).
+2. **Sztuczny szum** dodany do danych treningowych lub testowych:
    - szum etykiet: 0%, 10%, 20%, 30% losowo zamienionych etykiet,
-   - szum na obrazach (gaussowski): różne wartości σ.
-3. **Kąt rotacji danych testowych** (przesunięcie rozkładu).
+   - szum na sygnale (gaussowski): różne wartości σ.
+3. **Naturalna niepewność z bazy:** porównanie modeli na podgrupach zbioru testowego:
+   - sygnał czysty vs. zaszumiony (kolumny jakości sygnału),
+   - pewność diagnozy 100 vs. < 100,
+   - opis potwierdzony przez lekarza vs. automatyczny (`validated_by_human`).
 
 ---
 
 ## 4. Metryki
 
-Oznaczenia: $N$ to liczba przykładów testowych, $K$ to liczba klas (dla MNIST $K = 10$), $p_{i,k}$ to przewidziane prawdopodobieństwo klasy $k$ dla przykładu $i$, a $y_i$ to prawdziwa klasa.
-
-Dla modelu probabilistycznego $p_{i,k}$ to **średnia z T przebiegów**:
+Oznaczenia: $N$ to liczba przykładów testowych, $K = 5$ to liczba klas, $p_{i,k}$ to przewidziane prawdopodobieństwo klasy $k$ dla przykładu $i$, a $y_i$ to prawdziwa klasa. Dla modelu probabilistycznego $p_{i,k}$ to średnia z T przebiegów:
 
 $$p_{i,k} = \frac{1}{T}\sum_{t=1}^{T} p^{(t)}_{i,k}$$
 
@@ -51,69 +111,54 @@ $$p_{i,k} = \frac{1}{T}\sum_{t=1}^{T} p^{(t)}_{i,k}$$
 
 $$\text{Acc} = \frac{1}{N}\sum_i \mathbb{1}\left[\arg\max_k p_{i,k} = y_i\right]$$
 
-- **Co mierzy:** jaki odsetek predykcji jest trafny.
-- **Zakres:** 0–1, im więcej, tym lepiej.
-- **Rola w projekcie:** punkt odniesienia. Spodziewamy się, że oba modele będą tu podobne. Accuracy **nie mówi nic o tym, jak pewny był model**.
+Odsetek trafnych predykcji (0–1, ↑). Punkt odniesienia: spodziewamy się, że oba modele będą tu podobne. Accuracy nie mówi nic o tym, jak pewny był model. Przy niezbalansowanych klasach warto dodać **balanced accuracy** lub **macro-F1**.
 
-### 4.2 NLL (Negative Log-Likelihood, log-loss)
+### 4.2 NLL (log-loss)
 
 $$\text{NLL} = -\frac{1}{N}\sum_i \log p_{i,y_i}$$
 
-- **Co mierzy:** jakie prawdopodobieństwo model przypisał prawdziwej klasie.
-- **Zakres:** 0–∞, im mniej, tym lepiej.
-- **Rola w projekcie:** surowo karze **pewne pomyłki**. Jeśli model da 0.99 złej klasie, NLL mocno rośnie. Tu model probabilistyczny powinien wyraźnie wygrywać przy dużej rotacji i szumie.
-- **Kod:** `keras.losses.sparse_categorical_crossentropy`
+Prawdopodobieństwo przypisane prawdziwej klasie (0–∞, ↓). Surowo karze **pewne pomyłki**, więc tu model probabilistyczny powinien wygrywać przy szumie i małym zbiorze.
 
 ### 4.3 Brier score
 
 $$\text{Brier} = \frac{1}{N}\sum_i \sum_k \left(p_{i,k} - \mathbb{1}[k = y_i]\right)^2$$
 
-- **Co mierzy:** błąd kwadratowy między wektorem prawdopodobieństw a one-hot prawdziwej etykiety.
-- **Zakres:** 0–2, im mniej, tym lepiej.
-- **Rola w projekcie:** podobna do NLL, ale łagodniejsza dla skrajnych błędów i odporna na $\log 0$. Dobrze ją pokazać obok NLL.
+Błąd kwadratowy między prawdopodobieństwami a one-hot etykiety (0–2, ↓). Podobny do NLL, ale łagodniejszy dla skrajnych błędów.
 
 ### 4.4 ECE (Expected Calibration Error)
 
-Predykcje dzielimy na $M$ koszyków według pewności $\hat{p}_i = \max_k p_{i,k}$ (np. $M = 15$).
+Predykcje dzielimy na $M$ koszyków według pewności $\hat{p}_i = \max_k p_{i,k}$ (np. $M = 15$):
 
 $$\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N}\,\left|\text{acc}(B_m) - \text{conf}(B_m)\right|$$
 
-- **Co mierzy:** czy pewność modelu zgadza się z rzeczywistą trafnością. Jeśli model mówi „90%”, powinien mieć rację w ~90% takich przypadków.
-- **Zakres:** 0–1, im mniej, tym lepiej.
-- **Rola w projekcie:** **kluczowa metryka**. Zwykłe sieci są zwykle zbyt pewne siebie (*overconfident*), a warstwy bayesowskie powinny to poprawiać.
-- **Wizualizacja:** *reliability diagram*, czyli słupki accuracy vs. confidence dla każdego koszyka na tle przekątnej oznaczającej idealną kalibrację.
+Czy pewność modelu zgadza się z trafnością (0–1, ↓). **Kluczowa metryka**: zwykłe sieci są zwykle zbyt pewne siebie, a warstwy bayesowskie powinny to poprawiać. Wizualizacja: *reliability diagram*.
 
-### 4.5 Entropia predykcji (miara niepewności)
+### 4.5 Entropia predykcji
 
 $$H_i = -\sum_k p_{i,k}\log p_{i,k}$$
 
-- **Co mierzy:** jak rozmyta jest predykcja. Wynosi 0, gdy model jest całkowicie pewny, i $\log K \approx 2.30$, gdy wszystkie klasy są jednakowo prawdopodobne.
-- **Rola w projekcie:** to nie jest metryka „lepiej/gorzej”, tylko **zachowanie modelu**. Chcemy, żeby entropia **rosła razem z kątem rotacji i szumem**. Pokazujemy średnią entropię osobno dla poprawnych i błędnych predykcji.
+Jak rozmyta jest predykcja: od 0 (pełna pewność) do $\log 5 \approx 1.61$ (wszystkie klasy jednakowo prawdopodobne). To miara **zachowania modelu**: chcemy, żeby rosła z szumem i była wyższa tam, gdzie baza wskazuje niższą pewność diagnozy.
 
-**Dodatkowo tylko dla modelu probabilistycznego:** rozkład entropii na dwie części.
+Dla modelu probabilistycznego dzielimy ją na dwie części:
 
 $$\underbrace{H\left[\bar{p}_i\right]}_{\text{całkowita}} = \underbrace{\frac{1}{T}\sum_t H\left[p^{(t)}_i\right]}_{\text{aleatoryczna (dane)}} + \underbrace{\text{MI}_i}_{\text{epistemiczna (model)}}$$
 
-Mutual information (MI) mierzy, jak bardzo kolejne próbki modelu się ze sobą nie zgadzają. Powinna rosnąć przy dużej rotacji i małym zbiorze treningowym. Zwykły model **nie ma tej informacji**.
+Mutual information (MI) mówi, jak bardzo kolejne próbki modelu się ze sobą nie zgadzają. Zwykły model nie ma tej informacji.
 
-### 4.6 Accuracy vs. odrzucenie (selective prediction)
+### 4.6 Accuracy vs. odrzucenie
 
-- **Jak liczymy:** sortujemy przykłady według niepewności (entropii) i odrzucamy kolejno 0%, 10%, …, 50% najbardziej niepewnych. Na pozostałych liczymy accuracy.
-- **Rola w projekcie:** praktyczny sens niepewności, czyli „model oddaje trudne przypadki człowiekowi”. Lepszy model ma krzywą, która rośnie szybciej.
-- **Podsumowanie liczbowe:** pole pod krzywą ryzyko–pokrycie (AURC).
+Odrzucamy 0%, 10%, …, 50% najbardziej niepewnych przykładów i liczymy accuracy na pozostałych. To scenariusz „model odsyła trudne zapisy do kardiologa”. Podsumowanie liczbowe: AURC (↓).
 
 ### 4.7 Koszt obliczeniowy
 
-- Czas treningu na epokę.
-- Czas predykcji, bo model probabilistyczny wymaga T przebiegów.
-- Liczba parametrów. Warstwy Flipout mają ~2× więcej parametrów (średnia i wariancja dla każdej wagi).
+Czas treningu, czas predykcji (model B wymaga T przebiegów) i liczba parametrów (warstwy Flipout mają ~2× więcej).
 
 ### Podsumowanie metryk
 
 | Metryka | Lepiej | Spodziewana różnica A vs B |
 |---|---|---|
-| Accuracy | ↑ | mała |
-| NLL | ↓ | duża przy rotacji i szumie |
+| Accuracy / macro-F1 | ↑ | mała |
+| NLL | ↓ | duża przy szumie i małym zbiorze |
 | Brier | ↓ | średnia |
 | ECE | ↓ | **duża** |
 | Entropia | rośnie z trudnością danych | B reaguje wyraźniej |
@@ -127,31 +172,29 @@ Mutual information (MI) mierzy, jak bardzo kolejne próbki modelu się ze sobą 
 
 ## 5. Prezentacja wyników
 
-- Accuracy, NLL, ECE i entropia **w funkcji kąta rotacji**, dla obu modeli na jednym wykresie.
-- Metryki **w funkcji rozmiaru zbioru treningowego**.
-- Metryki **w funkcji poziomu szumu**.
+- Metryki **w funkcji rozmiaru zbioru treningowego** dla obu modeli na jednym wykresie.
+- Metryki **w funkcji poziomu szumu** (etykiet i sygnału).
 - **Heatmapa różnicy (B − A)** dla kombinacji rozmiar zbioru × poziom szumu, która pokaże, gdzie przewaga modelu B jest największa, a gdzie najmniejsza.
+- **Entropia na podgrupach z bazy:** czysty vs. zaszumiony sygnał, pewność diagnozy 100 vs. < 100, opis lekarza vs. automatyczny.
 - **Reliability diagrams** dla obu modeli.
 - Krzywe **accuracy vs. odrzucenie**.
-- Przykładowe cyfry, przy których model A jest pewny i się myli, a model B zgłasza niepewność.
+- Przykładowe zapisy EKG, przy których model A jest pewny i się myli, a model B zgłasza niepewność.
 
 ---
 
 ## 6. Wnioski (pytania, na które odpowiadamy)
 
-- W jakich warunkach warstwy probabilistyczne dają największą przewagę? Spodziewamy się: mały zbiór, dużo szumu, duża rotacja.
-- Kiedy różnica jest pomijalna? Spodziewamy się: duży i czysty zbiór, dane z tego samego rozkładu co trening.
+- W jakich warunkach warstwy probabilistyczne dają największą przewagę? Spodziewamy się: mały zbiór, dużo szumu, niepewne diagnozy.
+- Kiedy różnica jest pomijalna? Spodziewamy się: duży zbiór, czysty sygnał, jednoznaczne diagnozy.
+- Czy niepewność modelu B zgadza się z niepewnością zapisaną w bazie (jakość sygnału, pewność diagnozy)?
 - Ile kosztuje model probabilistyczny: czas treningu, czas predykcji, liczba parametrów.
 
 ---
 
 ## 7. Propozycje rozwijania projektu
 
-- **Wykrywanie danych spoza rozkładu (OOD), metryka AUROC:**
-  - łączymy dane testowe in-distribution (etykieta 0) z danymi OOD, np. Fashion-MNIST albo cyframi obróconymi o ≥ 90° (etykieta 1),
-  - score to entropia lub MI, a potem liczymy AUROC (`sklearn.metrics.roc_auc_score`),
-  - zakres: 0.5 to zgadywanie, 1.0 to idealne rozróżnienie,
-  - sprawdza, czy model „wie, że nie wie”. Tu spodziewamy się dużej różnicy między modelami.
-- **Podmiana zbioru danych**, np. na Fashion-MNIST albo CIFAR-10 / CIFAR-10-C, wraz z dostosowaniem architektury (więcej warstw konwolucyjnych, probabilistyczne warstwy konwolucyjne).
+- **Klasyfikacja wieloetykietowa:** wszystkie zapisy, 5 nadklas z wyjściem sigmoid zamiast softmax (metryki liczone osobno dla każdej klasy).
+- **Wykrywanie danych spoza rozkładu (OOD), metryka AUROC:** np. zapisy z rozrusznikiem (`pacemaker`) albo EKG z innej bazy. Score to entropia lub MI. Sprawdza, czy model „wie, że nie wie”.
+- **Wersja 500 Hz** lub bardziej szczegółowe etykiety (podklasy diagnostyczne).
 - **MC Dropout** jako trzeci, tani model porównawczy.
 - **Probabilistyczna warstwa wyjściowa** (`tfp.layers.OneHotCategorical` / `DistributionLambda`), żeby jawnie modelować niepewność aleatoryczną.
