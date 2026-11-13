@@ -1,0 +1,21 @@
+{
+  "run_id": "2026-11-11_16-30-50_A_wybrany",
+  "config": {
+    "filters": [
+      64,
+      128,
+      128,
+      256
+    ],
+    "kernel_size": 7,
+    "dense_units": 64,
+    "dropout": 0.5,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 60,
+    "patience": 8,
+    "class_weight_power": 0.5,
+    "kl_scale": 1.0,
+    "mc_samples": 50
+  }
+}

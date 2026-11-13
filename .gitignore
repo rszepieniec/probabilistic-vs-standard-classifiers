@@ -1,2 +1,5 @@
 data/
 .DS_Store
+runs/*/model.weights.h5
+.ipynb_checkpoints/
+__pycache__/

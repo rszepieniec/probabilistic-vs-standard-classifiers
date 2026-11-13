@@ -37,6 +37,36 @@ Szybkie sprawdzenie (z głównego folderu repo):
 ls data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1/ptbxl_database.csv
 ```
 
+### Środowisko
+
+```bash
+conda create -n prob-clf python=3.11
+conda activate prob-clf
+pip install -r requirements.txt
+jupyter lab notebooks/
+```
+
+Notebooki:
+- `01_przeglad_danych.ipynb`: przegląd bazy (etykiety, pewność diagnoz, jakość sygnału, przykładowe EKG).
+- `02_przygotowanie_danych.ipynb`: normalizacja, wagi klas i warianty do eksperymentów (mniejszy zbiór, szum etykiet i sygnału).
+
+- `03_model_A.ipynb`: model klasyczny, dobór hiperparametrów na walidacji.
+
+Wczytywanie danych jest w `src/data.py` (`load_metadata()`, `load_signals()`), a przygotowanie do treningu w `src/preprocessing.py` (`load_dataset()`).
+
+### Logowanie przebiegów
+
+Każdy trening (`run_or_load()` z `src/runs.py`) zapisuje się w `runs/<data>_<godzina>_<nazwa>/`:
+konfiguracja z commitem gita, historia epok, wykres krzywych uczenia, metryki walidacyjne, predykcje dla każdego przykładu i wagi modelu.
+Zbiorcza tabela wszystkich przebiegów jest w `runs/index.csv`, a w terminalu:
+
+```bash
+python -m src.runs
+```
+
+Identyczny przebieg (ten sam model, konfiguracja, seed i wariant danych) nie jest trenowany ponownie, tylko wczytywany.
+Wagi modeli nie trafiają do gita, reszta tak. W kolumnie `commit` gwiazdka oznacza niezacommitowane zmiany w `src/`. Przy pierwszym wczytaniu sygnały zapisują się do `data/processed/` (ok. 1 GB), kolejne wczytania trwają sekundy.
+
 ### Co zawiera
 
 - **21 837 zapisów EKG** od 18 885 pacjentów, każdy 10 s, **12 odprowadzeń** (I, II, III, aVR, aVL, aVF, V1–V6).
@@ -98,6 +128,11 @@ Każdą kombinację powtarzamy kilka razy z różnymi seedami.
    - sygnał czysty vs. zaszumiony (kolumny jakości sygnału),
    - pewność diagnozy 100 vs. < 100,
    - opis potwierdzony przez lekarza vs. automatyczny (`validated_by_human`).
+4. **Czy niepewność modelu „widzi” wątpliwości lekarza** (główna analiza):
+   - dla NORM i MI osobno: AUROC rozróżnienia diagnoz niepewnych (pewność < 100) od pewnych (pewność 100), gdzie score to entropia predykcji modelu (0,5 = model tego nie widzi),
+   - dla modelu B dodatkowo osobno dla niepewności aleatorycznej i epistemicznej,
+   - tylko na etapie ewaluacji: pewność diagnozy **nie jest używana w treningu**, żeby pozostała niezależną miarą trudności przykładu,
+   - przedziały ufności z bootstrapu i kilku seedów, bo grupy są małe (test: NORM 704 / 209, MI 115 / 141).
 
 ---
 
@@ -176,6 +211,7 @@ Czas treningu, czas predykcji (model B wymaga T przebiegów) i liczba parametró
 - Metryki **w funkcji poziomu szumu** (etykiet i sygnału).
 - **Heatmapa różnicy (B − A)** dla kombinacji rozmiar zbioru × poziom szumu, która pokaże, gdzie przewaga modelu B jest największa, a gdzie najmniejsza.
 - **Entropia na podgrupach z bazy:** czysty vs. zaszumiony sygnał, pewność diagnozy 100 vs. < 100, opis lekarza vs. automatyczny.
+- **Średnia entropia modelu dla każdego poziomu pewności diagnozy** (15 / 35 / 50 / 80 / 100), osobno dla NORM i MI, modele A i B na jednym wykresie, oraz tabela AUROC (A vs B).
 - **Reliability diagrams** dla obu modeli.
 - Krzywe **accuracy vs. odrzucenie**.
 - Przykładowe zapisy EKG, przy których model A jest pewny i się myli, a model B zgłasza niepewność.

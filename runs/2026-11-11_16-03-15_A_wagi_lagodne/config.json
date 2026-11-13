@@ -1,0 +1,35 @@
+{
+  "probabilistic": false,
+  "model_config": {
+    "filters": [
+      32,
+      64,
+      64,
+      128
+    ],
+    "kernel_size": 7,
+    "dense_units": 64,
+    "dropout": 0.3,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 60,
+    "patience": 8,
+    "class_weight_power": 0.5,
+    "kl_scale": 1.0,
+    "mc_samples": 50
+  },
+  "seed": 0,
+  "data": {
+    "n_train": 12978
+  },
+  "name": "A_wagi_lagodne",
+  "key": "90e291f9a7",
+  "git": {
+    "commit": "aef8a64",
+    "dirty": true
+  },
+  "versions": {
+    "tensorflow": "2.21.0",
+    "tensorflow_probability": "0.25.0"
+  }
+}

@@ -1,0 +1,11 @@
+tensorflow-probability[tf]
+tf-keras
+wfdb
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+tqdm
+jupyterlab
+nbconvert
