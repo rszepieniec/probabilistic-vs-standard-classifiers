@@ -1,0 +1,22 @@
+{
+  "run_id": "2026-11-24_22-31-22_B_kl_01",
+  "config": {
+    "filters": [
+      32,
+      64,
+      64,
+      128
+    ],
+    "kernel_size": 7,
+    "dense_units": 64,
+    "dropout": 0.3,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "epochs": 60,
+    "patience": 8,
+    "class_weight_power": 1.0,
+    "kl_scale": 0.1,
+    "mc_samples": 50
+  },
+  "model_A_run_id": "2026-11-22_22-10-32_A_bazowy"
+}
